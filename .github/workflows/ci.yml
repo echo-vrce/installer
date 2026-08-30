@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo test --locked
+    # Deliberately not -D warnings. There are style warnings outstanding, and a job that is
+    # red from the first push is a job people learn to ignore.
+    - run: cargo clippy --locked --all-targets
+
+  windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+    # Native, not cross-compiled. The target is the machine, so .cargo/config.toml's
+    # +crt-static still applies and the exe is built on the OS it has to run on.
+    - run: cargo build --release --locked
+
+    - name: Package
+      shell: pwsh
+      run: |
+        $version = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF -replace '^refs/tags/','' } else { $env:GITHUB_SHA.Substring(0,7) }
+        $name = "echo-vrce-installer-$version"
+        New-Item -ItemType Directory -Path "dist/$name" | Out-Null
+        Copy-Item target/release/echo-vrce-installer.exe "dist/$name/"
+        Copy-Item target/release/echo-vrce-cli.exe "dist/$name/"
+        Copy-Item packaging/IMPORTANT_README.txt "dist/$name/"
+        Copy-Item LICENSE "dist/$name/"
+        Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+        (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLower() | Out-File "dist/$name.zip.sha256"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: windows
+        path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [test, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+
+    # First, because nothing is published before it. A tag whose version does not match
+    # Cargo.toml would ship a zip whose --version disagrees with its own filename.
+    - name: Tag has to match Cargo.toml
+      run: |
+        cargo_version=$(awk -F'"' '/^\[/{p=($0=="[package]")} p && /^version[[:space:]]*=/{print $2; exit}' Cargo.toml)
+        echo "tag:        $GITHUB_REF_NAME"
+        echo "Cargo.toml: $cargo_version"
+        test "$cargo_version" = "$GITHUB_REF_NAME"
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: windows
+        path: dist
+
+    # gh is preinstalled on the runner, so this needs no third-party action.
+    - env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 \
+          --title "$GITHUB_REF_NAME" \
+          --notes "Windows build. The zip holds both executables and a readme: keep them in the same folder, the window hands work that needs administrator rights to echo-vrce-cli.exe beside it.
+
+        Not code-signed, so SmartScreen will warn on first run."

@@ -1,0 +1,18 @@
+# Build output.
+/target
+
+# Where the app keeps its settings and logs when ECHO_VRCE_HOME points at the project.
+/.appdata
+
+# A Rust toolchain installed inside the project rather than in $HOME.
+/.toolchain
+
+# Bytecode from the scripts that draw the README images.
+__pycache__/
+*.pyc
+
+# CARGO_HOME, when the CI runner puts it here so it can be cached.
+/.cargo-home
+
+# Packaging output, when a release zip is built locally rather than in CI.
+/dist

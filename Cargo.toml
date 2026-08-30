@@ -1,0 +1,61 @@
+[package]
+name    = "echo-vrce-installer"
+version = "0.9.3"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+# glow (OpenGL) rather than wgpu: this ships to Windows and has to survive Wine/Proton,
+# where the OpenGL path is by far the best-trodden one.
+eframe = { version = "0.36", default-features = false, features = [
+    "glow", "default_fonts", "x11", "wayland",
+] }
+egui = "0.36"
+rfd  = "0.17"
+
+# Blocking HTTP with rustls. Blocking is the right shape here: downloads already have to
+# run off the UI thread, so an async runtime would buy nothing and cost a dependency tree.
+# rustls rather than native-tls matters for cross-compiling: OpenSSL to Windows is misery.
+ureq = "3.4"
+sha2 = "0.11"
+
+# Editing revive.vrmanifest means reading someone else's JSON, changing one entry, and
+# writing it back with everything else intact. A real parser is the only honest way to do
+# that; serde is already in the tree.
+serde_json = "1.0"
+
+# deflate-flate2 only, not "deflate". The umbrella feature also pulls in zopfli, which is
+# a slow high-ratio *compressor* for writing archives; this app only ever reads them.
+# flate2's default backend is miniz_oxide, pure Rust, so nothing needs a C toolchain to
+# cross-compile.
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2"] }
+
+# Both are already in the tree transitively, so declaring them downloads nothing. Used
+# only for free-space reporting, which stops being decorative once a 4.68 GiB download is
+# on the table.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_UI_Shell",
+    # For --cli: a GUI subsystem binary has no console, so it borrows its parent's.
+    "Win32_System_Console",
+    # For the elevation broker: ShellExecuteExW hands back a process handle, which is what
+    # makes it possible to wait for the elevated run and read its exit code.
+    "Win32_System_Threading", "Win32_Security",
+    # SHELLEXECUTEINFOW carries an HKEY, so windows-sys gates both the struct and
+    # ShellExecuteExW behind the registry feature. Nothing here touches the registry.
+    "Win32_System_Registry",
+    # The OAuth CSRF token comes from BCryptGenRandom, not from a hash of the clock.
+    "Win32_Security_Cryptography",
+    # SetErrorMode, so a failed CreateProcess returns an error instead of showing a
+    # system-modal dialog the user has to find and dismiss.
+    "Win32_System_Diagnostics_Debug",
+] }
+
+[profile.release]
+opt-level     = "s"
+lto           = true
+codegen-units = 1
+strip         = true

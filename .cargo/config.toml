@@ -1,0 +1,13 @@
+# The Windows build links the C runtime statically.
+#
+# Without this the executable imports VCRUNTIME140.dll, which is NOT part of Windows: it
+# comes with the Visual C++ Redistributable. On a clean install it is simply absent, and
+# because this is a GUI subsystem binary the failure is completely silent - no window, no
+# error, no log, nothing. Verified on a fresh Windows 10 LTSC, where the app did not start
+# at all and left no trace.
+#
+# Asking people to install a redistributable before they can run an installer is not a
+# reasonable thing to ship. The cost is a slightly larger binary, which for a program whose
+# job is downloading gigabytes is not a cost.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
