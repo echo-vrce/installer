@@ -35,8 +35,11 @@ jobs:
     - name: Package
       shell: pwsh
       run: |
-        $version = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF -replace '^refs/tags/','' } else { $env:GITHUB_SHA.Substring(0,7) }
-        $name = "echo-vrce-installer-$version"
+        # The asset name carries no version, deliberately. GitHub's permanent
+        # /releases/latest/download/<name> only resolves when the name is the same in
+        # every release, and that URL is what the website links to. Which version a zip
+        # is comes from the release it hangs under, and from --version.
+        $name = "echo-vrce-installer"
         New-Item -ItemType Directory -Path "dist/$name" | Out-Null
         Copy-Item target/release/echo-vrce-installer.exe "dist/$name/"
         Copy-Item target/release/echo-vrce-cli.exe "dist/$name/"
