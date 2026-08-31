@@ -202,6 +202,16 @@ https://files.echovr.de/updates/quest/update.manifest
 The Quest one carries `# BASE_APK:` and `# Target:` headers that the version gate depends
 on.
 
+**The manifest is edited by hand, under pressure.** When Meta shipped a PC update that
+broke Echo, the fix was appended to the manifest within hours: one entry separated by a
+single space where every other line uses two, and the file's own date comment still naming
+the previous day. So split on arbitrary whitespace, and never trust a date in a header. A
+parser that is fussy about spacing, or that believes the header, breaks precisely on the day
+it is needed most.
+
+That episode is also the argument for the update flow's priority: it is how a fix reaches
+players at all.
+
 ### The install layout
 
 ```text
@@ -313,6 +323,19 @@ whose only job is to hold it.
 The delete happens **after** the archive is downloaded and verified, not before. A failed
 download must not leave someone with nothing.
 
+### Installing is not finished until the manifest is applied
+
+Caught on a real headset: a Quest install left the base build in place with none of the
+manifest's `asset_patches`, because the install flow stopped once it had written the version
+marker. The PC side had always chained into the update; the Quest side had not.
+
+A fresh install that is already behind the current manifest is worse than an obvious
+failure. The game is there, it is subtly wrong, and nothing says so.
+
+The marker is still written **before** the update, deliberately. If the update then fails,
+the marker left behind is accurate, so the standalone update flow can identify the install
+and pick up cleanly rather than refusing it.
+
 ### Two binaries, because a Windows subsystem is a link-time decision
 
 `echo-vrce-installer.exe` is a GUI subsystem binary: double-clicking it must not flash a
@@ -415,6 +438,23 @@ the failure look like a success. So the Actions step states which case you are i
 way, and confirms before writing an entry that cannot launch. The desktop shortcut is
 unaffected: it launches the injector directly with the real path.
 
+### Three things about Revive that cost time to find out
+
+**The artwork pack is gone.** `files.echovr.de/stuff/patches/ready-at-dawn-echo-arena_assets.zip`
+is 404 on all three mirrors, and so is the whole `stuff/` tree. The original installer still
+offers "fix game artwork" with the box **ticked by default**, and its download throws on the
+404, which takes the entire Revive chain down with it. This port does not offer the action
+and says why, rather than quietly dropping it. Worth re-checking before building on it.
+
+**Revive is on 3.2.0**, and the original pins 3.1.1 in a string. Here the installer URL comes
+from the releases API with the pinned one only as a fallback, so it cannot go stale in
+silence.
+
+**Running Revive's own installer needs no broker.** It requests elevation in its own
+manifest, so a plain spawn fails with **error 740**. `ShellExecuteW` with the `runas` verb is
+the whole answer: Windows shows the prompt and this process stays unprivileged. The broker
+exists only for writes *this* app performs into Program Files.
+
 ### Windows' own dialogs are suppressed at startup
 
 `src/os.rs` calls `SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX)` as the
@@ -470,6 +510,10 @@ exactly 24 h apart and `hm` is an HMAC. A tampered or expired signature returns 
 indistinguishable by status from a URL that never existed, which is why that case is called
 out by name. URL validation must not require the string to end in `.dll`, since a query
 string follows it. Reuse the downloaded **file** on retry, never the URL.
+
+**The port and the path are not ours to change.** Port `53124` and path `/callback` are
+registered against the Discord client ID in the developer portal. Anything that "tidies up"
+either of them breaks the flow for everyone.
 
 **Generation takes about nine seconds**, because the bot builds a personalised DLL per
 request. That is why the API has a `409 busy` state at all: generation is serialised. The

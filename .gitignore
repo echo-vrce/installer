@@ -16,3 +16,7 @@ __pycache__/
 
 # Packaging output, when a release zip is built locally rather than in CI.
 /dist
+
+# Probes live outside this repository. A copy dropped in here to run one must not be
+# publishable by accident.
+/examples
