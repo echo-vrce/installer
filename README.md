@@ -4,7 +4,7 @@
 
 [![ci](https://img.shields.io/github/actions/workflow/status/echo-vrce/installer/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/echo-vrce/installer/actions)
 ![licence](https://img.shields.io/badge/licence-GPL--3.0--or--later-2563eb?style=flat-square)
-![version](https://img.shields.io/badge/version-0.9.3-2563eb?style=flat-square)
+![version](https://img.shields.io/badge/version-0.9.4-2563eb?style=flat-square)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-2563eb?style=flat-square)
 ![rust](https://img.shields.io/badge/rust-stable-2563eb?style=flat-square)
 

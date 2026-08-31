@@ -21,4 +21,5 @@ pub mod mark;
 pub mod os;
 pub mod theme;
 pub mod tools_screen;
+pub mod update_notice;
 pub mod widgets;

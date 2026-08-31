@@ -37,6 +37,8 @@ pub struct Tools {
     cache: CacheReport,
     cleared: Option<u64>,
     clear_error: Option<String>,
+
+    installer: crate::update_notice::Installer,
 }
 
 impl Default for Tools {
@@ -55,6 +57,7 @@ impl Default for Tools {
             cache: CacheReport::default(),
             cleared: None,
             clear_error: None,
+            installer: Default::default(),
         };
         tools.cache = tools.report();
         tools
@@ -155,14 +158,157 @@ impl Tools {
         self.collecting.is_some()
     }
 
-    pub fn show(&mut self, ui: &mut Ui) -> bool {
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        update: &mut crate::update_notice::State,
+        settings: &mut Settings,
+    ) -> bool {
         let busy = self.pump();
+        let updating = self.section_updates(ui, update, settings);
+        ui.add_space(theme::UNIT * 2.0);
         self.section_logs(ui, busy);
         ui.add_space(theme::UNIT * 2.0);
         section_own_log(ui);
         ui.add_space(theme::UNIT * 2.0);
         self.section_cache(ui);
-        busy
+        busy || updating
+    }
+
+    /// The update section.
+    ///
+    /// Here rather than on Home because Home is the list of things you came to do, and this
+    /// is maintenance of the tool itself, which is what the rest of this screen already is.
+    fn section_updates(
+        &mut self,
+        ui: &mut Ui,
+        update: &mut crate::update_notice::State,
+        settings: &mut Settings,
+    ) -> bool {
+        use crate::engine::selfupdate;
+        widgets::section_label(ui, "UPDATES");
+
+        let running = self.installer.pump();
+
+        if running {
+            widgets::status(
+                ui,
+                Status::Info,
+                self.installer.stage.as_deref().unwrap_or("Working"),
+            );
+            if let Some((done, total)) = self.installer.progress {
+                ui.add_space(theme::UNIT * 0.75);
+                let fraction = if total > 0 { done as f32 / total as f32 } else { 0.0 };
+                widgets::progress_row(
+                    ui,
+                    "",
+                    fraction,
+                    &format!(
+                        "{} / {}",
+                        crate::fmt::human_bytes(done),
+                        crate::fmt::human_bytes(total)
+                    ),
+                );
+            }
+            ui.add_space(theme::UNIT * 0.75);
+            if widgets::secondary(ui, "Cancel", true) {
+                self.installer.cancel();
+            }
+            return true;
+        }
+
+        match self.installer.finished.take() {
+            Some(Ok(())) => {
+                widgets::status(ui, Status::Ok, "Update installed");
+                ui.label(
+                    RichText::new(
+                        "Close this window and open it again to run the new version. The one \
+                         you were running is still beside it, with .old on the name, in case \
+                         you need to go back.",
+                    )
+                    .font(theme::font_ui(11.0))
+                    .color(theme::TEXT_FAINT),
+                );
+                return false;
+            }
+            Some(Err(e)) => {
+                widgets::status(ui, Status::Err, &e);
+                ui.add_space(theme::UNIT * 0.5);
+            }
+            None => {}
+        }
+
+        let current = selfupdate::current();
+        match &update.newer {
+            Some(v) => {
+                widgets::status(ui, Status::Info, &format!("{v} is available"));
+                widgets::mono_color(
+                    ui,
+                    &format!("you are on {current}"),
+                    10.5,
+                    theme::TEXT_DIM,
+                );
+                ui.add_space(theme::UNIT * 0.75);
+                // Checked before the button is drawn rather than after the download: inside
+                // Program Files there is no way to do this, because the elevation broker
+                // runs the very binary that would be replaced.
+                if selfupdate::can_replace_in_place() {
+                    if widgets::primary(ui, &format!("Install {v}"), true) {
+                        self.installer.start();
+                    }
+                } else {
+                    widgets::status(
+                        ui,
+                        Status::Warn,
+                        "this folder cannot be written to, so the update has to be done by hand",
+                    );
+                    ui.add_space(theme::UNIT * 0.5);
+                    widgets::external_link(ui, "Download it", crate::endpoints::RELEASE_LATEST);
+                }
+            }
+            None if update.is_checking() => {
+                widgets::status(ui, Status::Info, "Checking...");
+            }
+            None => {
+                match update.days_since_check() {
+                    Some(0) => widgets::status(
+                        ui,
+                        Status::Ok,
+                        &format!("{current} is the latest, checked today"),
+                    ),
+                    Some(d) => widgets::status(
+                        ui,
+                        Status::Ok,
+                        &format!("{current} was the latest {d} days ago"),
+                    ),
+                    None => widgets::status(ui, Status::Warn, "never checked successfully"),
+                }
+                // The whole truth, on the screen where somebody is trying to work out why.
+                if let Some(e) = &update.last_error {
+                    widgets::status(ui, Status::Err, e);
+                }
+                ui.add_space(theme::UNIT * 0.75);
+                if widgets::secondary(ui, "Check now", true) {
+                    update.begin();
+                }
+            }
+        }
+
+        ui.add_space(theme::UNIT);
+        let mut on = settings.update_check;
+        if ui.checkbox(&mut on, "Check for updates at startup").changed() {
+            settings.update_check = on;
+            settings.save();
+        }
+        ui.label(
+            RichText::new(
+                "One request to GitHub for a file listing the newest version. Nothing about \
+                 you is sent, and nothing is installed without asking.",
+            )
+            .font(theme::font_ui(10.5))
+            .color(theme::TEXT_FAINT),
+        );
+        false
     }
 
     fn section_logs(&mut self, ui: &mut Ui, busy: bool) {

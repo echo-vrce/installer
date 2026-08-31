@@ -126,7 +126,7 @@ fn choose_suggestion(
     (fallback(), None)
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     /// Explicit adb chosen by the user. Takes priority over everything found automatically.
     pub adb_path: Option<PathBuf>,
@@ -134,6 +134,43 @@ pub struct Settings {
     pub revive_path: Option<PathBuf>,
     /// Last install root used, so the field is not empty next time.
     pub install_path: Option<String>,
+    /// Whether to ask GitHub at startup whether a newer installer exists.
+    ///
+    /// On by default and switchable off, with what it sends spelled out in About. It is one
+    /// unauthenticated GET of a public file and carries nothing identifying, but it is still
+    /// an outbound request nobody asked for, and an audience that sideloads unsigned
+    /// executables is entitled to know about it.
+    pub update_check: bool,
+    /// Unix seconds of the last check that actually succeeded. Absent means never.
+    ///
+    /// A failed attempt deliberately does not touch this: what the app reports is how long
+    /// it has been since it last knew something, not how long since it last tried. One
+    /// dropped connection means nothing; a week of them means a firewall.
+    pub update_checked_at: Option<u64>,
+    /// The newest version the last successful check saw.
+    ///
+    /// Remembered rather than recomputed because the check runs at most once a day: without
+    /// this, an app restarted two hours after finding an update forgets about it and says
+    /// nothing until tomorrow. It also lets the command line report the same thing without
+    /// making a network request of its own, which a script calling --version would not
+    /// thank anyone for.
+    pub update_latest_seen: Option<String>,
+}
+
+/// Written out rather than derived, because a derived `bool` is `false` and `load` falls
+/// back to this when there is no settings file yet. Deriving it would have turned the
+/// update check off on precisely the installs that have never been configured.
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            adb_path: None,
+            revive_path: None,
+            install_path: None,
+            update_check: true,
+            update_checked_at: None,
+            update_latest_seen: None,
+        }
+    }
 }
 
 impl Settings {
@@ -142,7 +179,13 @@ impl Settings {
         let Ok(text) = fs::read_to_string(path) else {
             return Settings::default();
         };
-        let map = parse(&text);
+        Settings::load_from(&text)
+    }
+
+    /// The parsing half of [`load`], with the file read out of it, so a test can prove a
+    /// round trip without writing to the real settings directory.
+    fn load_from(text: &str) -> Settings {
+        let map = parse(text);
         Settings {
             adb_path: map.get("adb_path").filter(|v| !v.is_empty()).map(PathBuf::from),
             install_path: map.get("install_path").filter(|v| !v.is_empty()).cloned(),
@@ -150,6 +193,14 @@ impl Settings {
                 .get("revive_path")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from),
+            // Absent means on. A setting whose default changes when the file is missing is
+            // a setting that behaves differently on a fresh install than on an upgrade.
+            update_check: map.get("update_check").map(|v| v != "false").unwrap_or(true),
+            update_checked_at: map.get("update_checked_at").and_then(|v| v.parse().ok()),
+            update_latest_seen: map
+                .get("update_latest_seen")
+                .filter(|v| !v.is_empty())
+                .cloned(),
         }
     }
 
@@ -167,6 +218,15 @@ impl Settings {
         }
         if let Some(p) = &self.revive_path {
             text.push_str(&format!("revive_path={}\n", sanitise(&p.to_string_lossy())));
+        }
+        if !self.update_check {
+            text.push_str("update_check=false\n");
+        }
+        if let Some(t) = self.update_checked_at {
+            text.push_str(&format!("update_checked_at={t}\n"));
+        }
+        if let Some(v) = &self.update_latest_seen {
+            text.push_str(&format!("update_latest_seen={}\n", sanitise(v)));
         }
         text
     }
@@ -304,6 +364,9 @@ mod tests {
             adb_path: Some(PathBuf::from("/opt/adb")),
             install_path: Some("C:\\EchoVR".into()),
             revive_path: Some(PathBuf::from("D:\\Revive")),
+            update_check: false,
+            update_checked_at: Some(1_756_000_000),
+            update_latest_seen: Some("0.9.9".into()),
         };
         // Written through the real serialiser, so a field added to Settings and forgotten
         // in save() fails here rather than going quietly missing on the next launch.
@@ -313,6 +376,10 @@ mod tests {
         assert_eq!(map.get("adb_path").unwrap(), "/opt/adb");
         assert_eq!(map.get("install_path").unwrap(), "C:\\EchoVR");
         assert_eq!(map.get("revive_path").unwrap(), "D:\\Revive");
+        assert_eq!(map.get("update_check").unwrap(), "false");
+        assert_eq!(map.get("update_checked_at").unwrap(), "1756000000");
+        assert_eq!(map.get("update_latest_seen").unwrap(), "0.9.9");
+        assert_eq!(Settings::load_from(&s.serialise()), s, "a field must survive a round trip");
         assert!(!file.with_extension("tmp").exists(), "temp file was left behind");
 
         fs::remove_dir_all(tmp).ok();

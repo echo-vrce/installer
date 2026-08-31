@@ -49,5 +49,21 @@ pub const REPO_ORIGINAL: &str = "https://github.com/marshmallow-mia/Echo-VR-Inst
 /// The licence this program is under, linked from About because a notice nobody can read
 /// in full is only half a notice.
 pub const LICENCE: &str = "https://www.gnu.org/licenses/gpl-3.0.html";
+
+/// This project. Shown in About and used to build the update URLs below.
+pub const REPO: &str = "https://github.com/echo-vrce/installer";
+
+/// Where an update comes from.
+///
+/// All three are permalinks: GitHub resolves `releases/latest` to whichever release is
+/// newest, so none of these has to change when a version is published. That only holds
+/// because the release asset is named without a version in it.
+pub const RELEASE_LATEST: &str = "https://github.com/echo-vrce/installer/releases/latest";
+pub const UPDATE_VERSION: &str =
+    "https://github.com/echo-vrce/installer/releases/latest/download/version.txt";
+pub const UPDATE_ZIP: &str =
+    "https://github.com/echo-vrce/installer/releases/latest/download/echo-vrce-installer.zip";
+pub const UPDATE_SHA256: &str =
+    "https://github.com/echo-vrce/installer/releases/latest/download/echo-vrce-installer.zip.sha256";
 /// Membership of this server, not the lounge, is what the patch bot checks.
 pub const DISCORD_PATCHER: &str = "https://discord.gg/bMpsva6fmA";

@@ -83,11 +83,27 @@ pub struct App {
     tools: Option<Tools>,
     /// A confirmation waiting to be answered, and the step it would advance to.
     pending: Option<(crate::flows::Confirm, usize)>,
+    settings: crate::config::Settings,
+    update: crate::update_notice::State,
 }
 
 impl Default for App {
     fn default() -> Self {
-        App { screen: Screen::Home, step: 0, flow: None, deps: None, tools: None, pending: None }
+        let settings = crate::config::Settings::load();
+        let mut update = crate::update_notice::State::default();
+        // Fires a request on another thread and returns. The window is never held up for
+        // it, and nothing is drawn until there is an answer worth drawing.
+        update.begin_if_due(&settings);
+        App {
+            screen: Screen::Home,
+            step: 0,
+            flow: None,
+            deps: None,
+            tools: None,
+            pending: None,
+            settings,
+            update,
+        }
     }
 }
 
@@ -154,6 +170,9 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.update.pump(&mut self.settings) {
+            self.settings.save();
+        }
         match self.screen {
             Screen::Home => self.home(ui),
             Screen::Flow => self.flow_screen(ui),
@@ -171,7 +190,10 @@ impl App {
             .exact_size(46.0)
             .frame(panel_frame(theme::SURFACE, 16.0))
             .show(ui, |ui| {
+                let notice = self.update.notice(&self.settings);
+                let mut open_tools = false;
                 ui.horizontal_centered(|ui| {
+                    update_line(ui, &notice, &mut open_tools);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let r = ui.add(
                             egui::Label::new(
@@ -189,6 +211,12 @@ impl App {
                         }
                     });
                 });
+                if open_tools {
+                    self.screen = Screen::Tools;
+                    if let Some(tools) = self.tools.as_mut() {
+                        tools.recheck();
+                    }
+                }
             });
 
         let mut start: Option<Task> = None;
@@ -607,7 +635,7 @@ impl App {
                     ui.add_space(theme::UNIT * 3.5);
                     capped(ui, |ui| {
                         settings_header(ui, "Tools");
-                        busy = tools.show(ui);
+                        busy = tools.show(ui, &mut self.update, &mut self.settings);
                         ui.add_space(theme::UNIT * 2.0);
                     });
                 });
@@ -702,6 +730,26 @@ impl App {
                         widgets::external_link(ui, "Read the licence", endpoints::LICENCE);
                         ui.add_space(theme::UNIT * 2.0);
 
+                        widgets::section_label(ui, "UPDATES");
+                        // Said out loud rather than buried: this is the one outbound
+                        // request the app makes that nobody asked for. An audience that
+                        // sideloads unsigned executables is entitled to know it happens,
+                        // and where the switch is.
+                        ui.label(
+                            RichText::new(
+                                "Once a day at startup, this asks GitHub for a file naming \
+                                 the newest published version, and says so on the main \
+                                 screen if there is one. Nothing identifying is sent, and \
+                                 nothing is downloaded or installed without asking. Tools \
+                                 has the switch, and shows when it last managed to check.",
+                            )
+                            .font(theme::font_ui(11.5))
+                            .color(theme::TEXT_DIM),
+                        );
+                        ui.add_space(theme::UNIT * 0.5);
+                        widgets::external_link(ui, "Releases", endpoints::RELEASE_LATEST);
+                        ui.add_space(theme::UNIT * 2.0);
+
                         widgets::section_label(ui, "THIRD PARTY");
                         ui.label(
                             RichText::new(
@@ -720,6 +768,41 @@ impl App {
 }
 
 // ------------------------------------------------------------------ helpers
+
+/// The update line on Home's footer.
+///
+/// Same place and same widget the flows use to say something about the state of the world,
+/// so there is no new vocabulary to learn: it reads like "Revive found" reads. Clicking it
+/// goes to Tools rather than to a browser, because Tools is where the action lives.
+///
+/// Silent when there is nothing to report. No spinner while the check runs: nobody asked
+/// for it, and an indicator that appears and vanishes without a result reads as a fault.
+fn update_line(ui: &mut Ui, notice: &crate::update_notice::Notice, open_tools: &mut bool) {
+    use crate::update_notice::Notice;
+    use crate::widgets::Status;
+    let (kind, text) = match notice {
+        Notice::Nothing => return,
+        Notice::Available(v) => (Status::Info, format!("Version {v} is available")),
+        // Staleness, not failure. One dropped connection is not worth a word; a week of
+        // them means the absence of a line would otherwise be read as "up to date".
+        Notice::Stale(0) => (Status::Warn, "Updates have never been checked".to_string()),
+        Notice::Stale(days) => (Status::Warn, format!("Last update check: {days} days ago")),
+    };
+    let r = ui
+        .scope(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            widgets::status(ui, kind, &text);
+        })
+        .response
+        .interact(Sense::click());
+    if r.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if r.clicked() {
+        *open_tools = true;
+    }
+}
+
 fn panel_frame(fill: egui::Color32, margin: f32) -> egui::Frame {
     egui::Frame::new().fill(fill).inner_margin(egui::Margin::same(margin as i8))
 }

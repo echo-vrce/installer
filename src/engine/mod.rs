@@ -18,6 +18,7 @@ pub mod pc_install;
 pub mod pc_patch;
 pub mod quest;
 pub mod revive;
+pub mod selfupdate;
 pub mod quest_install;
 pub mod quest_update;
 pub mod tools;

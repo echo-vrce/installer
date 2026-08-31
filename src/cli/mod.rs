@@ -807,10 +807,19 @@ fn version(st: Style) -> i32 {
                 "name": env!("CARGO_PKG_NAME"),
                 "version": env!("CARGO_PKG_VERSION"),
                 "licence": env!("CARGO_PKG_LICENSE"),
+                "latest_seen": crate::config::Settings::load().update_latest_seen,
             }),
         );
     }
     println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    // From what the last check already found, never a request of its own: `--version` is a
+    // thing scripts call, and it has no business reaching the network to answer.
+    let s = crate::config::Settings::load();
+    if let Some(latest) = s.update_latest_seen.as_deref() {
+        if crate::engine::selfupdate::is_newer(latest, crate::engine::selfupdate::current()) {
+            println!("{latest} is available: {}", crate::endpoints::RELEASE_LATEST);
+        }
+    }
     // The same notice the window shows on its About screen. GPL-3.0 section 5(d) asks for
     // it wherever the program talks to a person, and a command line is one of those places.
     println!("Copyright (C) 2026 kekt8c.");

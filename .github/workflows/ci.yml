@@ -47,6 +47,12 @@ jobs:
         Copy-Item LICENSE "dist/$name/"
         Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
         (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLower() | Out-File "dist/$name.zip.sha256"
+        # The app checks for updates by fetching this one file, rather than through the
+        # GitHub API: no JSON, no rate limit shared with everyone behind the same NAT, and
+        # no API shape that can change underneath a released binary. -NoNewline because a
+        # trailing CRLF in a version string is a comparison that never matches.
+        $tag = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF -replace '^refs/tags/','' } else { '0.0.0-dev' }
+        [IO.File]::WriteAllText("$PWD/dist/version.txt", $tag)
 
     - uses: actions/upload-artifact@v4
       with:
@@ -80,7 +86,7 @@ jobs:
     - env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 \
+        gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 dist/version.txt \
           --title "$GITHUB_REF_NAME" \
           --notes "Windows build. The zip holds both executables and a readme: keep them in the same folder, the window hands work that needs administrator rights to echo-vrce-cli.exe beside it.
 

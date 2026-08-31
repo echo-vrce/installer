@@ -38,6 +38,11 @@ fn main() -> eframe::Result {
         log::line(&format!("running:  {}", exe.display()));
     }
 
+    // An update leaves the previous binaries beside the new ones with .old on the name, so
+    // anyone can go back by hand. Reaching this line is the only test that matters: it
+    // proves the new build starts. Until it does, the old one stays where it can be found.
+    echo_vrce_installer::engine::selfupdate::sweep_previous();
+
     // The command line used to live behind `--cli` on this binary. Anyone who learned that,
     // or copied it from an older note, gets told where it went instead of a window opening
     // as though they had typed nothing.
