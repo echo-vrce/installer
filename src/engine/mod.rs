@@ -12,6 +12,7 @@ pub mod hash;
 pub mod install;
 pub mod manifest;
 pub mod meta;
+pub mod netcheck;
 pub mod patch;
 pub mod path_input;
 pub mod pc_install;

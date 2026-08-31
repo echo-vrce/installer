@@ -432,7 +432,7 @@ pub fn install(
     // rather than untidy: a running image cannot be replaced at all, which is the whole
     // reason a reinstall used to fail with "used by another process".
     if live.join(exe_name()).is_file() {
-        let _ = Adb::at(&live.join(exe_name())).kill_server();
+        let _ = Adb::at(live.join(exe_name())).kill_server();
     }
 
     let archive = tools.join("platform-tools.zip");

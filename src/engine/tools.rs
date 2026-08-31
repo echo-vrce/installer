@@ -284,7 +284,7 @@ pub fn cache_report(caches: &[Cache<'_>]) -> CacheReport {
             report.entries.push((path, size));
         }
     }
-    report.entries.sort_by(|a, b| b.1.cmp(&a.1));
+    report.entries.sort_by_key(|(_, size)| std::cmp::Reverse(*size));
     report
 }
 
@@ -483,6 +483,6 @@ mod tests {
         assert!(t.ends_with('Z'), "got {t}");
         assert!(t[..8].chars().all(|c| c.is_ascii_digit()));
         // Sorting the names has to sort the bundles, which is the whole point of the shape.
-        assert!(format!("20260101-0000Z") < format!("20260101-0001Z"));
+        assert!("20260101-0000Z" < "20260101-0001Z");
     }
 }

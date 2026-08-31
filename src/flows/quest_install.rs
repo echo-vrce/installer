@@ -836,8 +836,7 @@ mod tests {
     /// move when the licence answer changes.
     #[test]
     fn blocking_follows_the_step_name_not_its_index() {
-        let mut f = QuestInstall::default();
-        f.licence = Some(Licence::NewPlayer);
+        let mut f = QuestInstall { licence: Some(Licence::NewPlayer), ..Default::default() };
         let authorise = f.steps().iter().position(|s| *s == "Authorise").unwrap();
         assert!(f.blocked_reason(authorise).is_some());
         f.patch_url = Some("https://files.echovr.de/x".into());
@@ -863,8 +862,7 @@ mod tests {
 
     #[test]
     fn install_stays_blocked_until_the_files_are_downloaded() {
-        let mut f = QuestInstall::default();
-        f.licence = Some(Licence::Owner);
+        let mut f = QuestInstall { licence: Some(Licence::Owner), ..Default::default() };
         let install = f.steps().iter().position(|s| *s == "Install").unwrap();
         assert!(f.blocked_reason(install).is_some());
         f.phase = Phase::Succeeded;

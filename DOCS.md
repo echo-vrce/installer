@@ -56,8 +56,8 @@ itself up on the first build.
 ```sh
 cargo run                    # native build, for iterating on the UI
 cargo build --release
-cargo test                   # 293 tests, none needs a display, a VM or a headset
-cargo clippy --all-targets
+cargo test                   # 299 tests, none needs a display, a VM or a headset
+cargo clippy --all-targets -- -D warnings   # what CI runs
 ```
 
 The program builds and runs on Linux. That is not a supported target for users: it exists
@@ -149,6 +149,7 @@ and the elevated child process, and why the tests need no display.
 | `src/endpoints.rs` | Every URL the app talks to, in one place |
 | `src/update_notice.rs` | The startup update check, the one line it draws, and the installer job |
 | `src/engine/selfupdate.rs` | Finding out whether a newer installer exists, and replacing this one |
+| `src/engine/netcheck.rs` | Which stage of the network is broken, host by host |
 | `src/config.rs` | Settings, and where app data lives |
 | `src/log.rs` | The log that outlives the window, and the ring the flows show |
 | `src/os.rs` | Process-wide OS behaviour that must be set before anything else runs |
@@ -593,6 +594,29 @@ A failed check does not borrow the download errors' wording. Those are written f
 4.68 GB payload: they promise the partial transfer is kept and will carry on, and suggest
 another mirror on a 404. Neither is true of a one-line file with a single source.
 
+### The network check reports a stage, not a verdict
+
+"Could not reach the server" is the same sentence for a DNS block, a firewall, a dead
+corporate proxy and a mirror that is genuinely down, and those have four different answers.
+So each host is tried in the order the machine tries it, and the first stage that fails is
+the finding: resolve the name with `to_socket_addrs`, open a socket to 443 with
+`connect_timeout`, then make the request. Doing the first two separately from the HTTP call
+is the entire point; ureq would report all three as one failure.
+
+**Any HTTP status counts as reachable.** A HEAD that comes back 405 has proved the host is
+up, and marking that red sends somebody to reset a router that was never the problem. The
+status is printed only when it is not 200 or 206, and even then the sentence leads with the
+fact that the host answered.
+
+The mirrors are probed at the archive URL, not at their root. A root that 404s proves the
+host is up and nothing more; the archive proves the mirror actually has the payload, which
+is the thing that stops an install when it is not true.
+
+A proxy in the environment is reported first, above the results, because a proxy nobody
+meant to set explains every failure under it at once and is invisible from inside the app
+otherwise. It is shown only on screen and never goes into a support bundle: the value can
+carry credentials.
+
 ### A panel gets `exact_size` minus its margins, and no more
 
 `Panel::bottom(...).exact_size(46.0)` with a 16 px frame margin leaves the contents **14
@@ -671,7 +695,7 @@ last one is the reason the "Better Graphics" and texture mods are not implemente
 
 ## Testing
 
-**293 unit and integration tests**, none of which needs a display, a virtual machine or a
+**299 unit and integration tests**, none of which needs a display, a virtual machine or a
 headset. Downloads are tested against a local HTTP server (`engine/testserver.rs`) that can
 be told to drop connections mid-transfer, so resume and retry are exercised rather than
 assumed.
@@ -714,10 +738,6 @@ untested.
 
 - **Installing Revive itself** and the **licence patch for a non-owner** have been walked by
   hand but are not covered by any automated test, for the UAC reason above.
-- **CI does not gate on style.** Clippy runs on every push but deliberately without
-  `-D warnings`: there are style warnings outstanding, and a job that is red from the first
-  push is a job people learn to ignore. Clearing them and then tightening it is a job of its
-  own.
 - **Mods are not implemented.** See [The other installers](#the-other-installers) for why:
   they need APK repacking, and repacking needs a signing identity.
 - **Tested narrowly.** A handful of machines, x86-64 throughout: Windows 10 and 11, plus

@@ -190,18 +190,23 @@ fn tag_path(part: &Path) -> PathBuf {
     part.with_file_name(name)
 }
 
-fn open_stream(
-    url: &str,
-    from: u64,
-) -> Result<(u16, Option<u64>, Option<String>, Box<dyn Read + Send>), Error> {
+/// An open response: the status, what it says about length, its validator, and the body.
+///
+/// Named rather than a four-tuple because the resume path has to replace one of these
+/// wholesale, and doing that through `fresh.0`, `fresh.1`, `fresh.2`, `fresh.3` was already
+/// the kind of line nobody can check by reading.
+struct Stream {
+    code: u16,
+    total: Option<u64>,
+    etag: Option<String>,
+    body: Box<dyn Read + Send>,
+}
+
+fn open_stream(url: &str, from: u64) -> Result<Stream, Error> {
     open_stream_tagged(url, from, None)
 }
 
-fn open_stream_tagged(
-    url: &str,
-    from: u64,
-    if_range: Option<&str>,
-) -> Result<(u16, Option<u64>, Option<String>, Box<dyn Read + Send>), Error> {
+fn open_stream_tagged(url: &str, from: u64, if_range: Option<&str>) -> Result<Stream, Error> {
     let mut builder = ureq::get(url)
         .config()
         // Statuses are data here: a 404 needs its own message, and an error body may
@@ -244,7 +249,7 @@ fn open_stream_tagged(
         });
 
     let etag = header("etag");
-    Ok((code, total, etag, Box::new(response.into_body().into_reader())))
+    Ok(Stream { code, total, etag, body: Box::new(response.into_body().into_reader()) })
 }
 
 /// Cap on a text fetch. A manifest is a couple of KB; an unbounded read of whatever a
@@ -297,15 +302,16 @@ pub fn fetch_text_cancellable(
 }
 
 fn fetch_text_once(url: &str) -> Result<String, Error> {
-    let (code, _, _etag, reader) = open_stream(url, 0)?;
-    if code != 200 {
+    let stream = open_stream(url, 0)?;
+    if stream.code != 200 {
         return Err(Error::Status {
-            code,
-            likely_expired: code == 404 && is_signed_cdn_url(url),
+            code: stream.code,
+            likely_expired: stream.code == 404 && is_signed_cdn_url(url),
         });
     }
     let mut buf = Vec::new();
-    reader
+    stream
+        .body
         .take(MAX_TEXT_BYTES)
         .read_to_end(&mut buf)
         .map_err(|e| Error::Network(e.to_string()))?;
@@ -426,20 +432,18 @@ fn fetch_once(
     };
 
     let saved_tag = if have > 0 { fs::read_to_string(tag_path(&part)).ok() } else { None };
-    let (mut code, mut total, mut etag, mut reader) =
-        open_stream_tagged(&spec.url, have, saved_tag.as_deref())?;
+    let mut stream = open_stream_tagged(&spec.url, have, saved_tag.as_deref())?;
 
     // 416 means the partial file is at or past the end of the resource: usually a complete
     // download whose rename never happened. Start clean rather than guess.
-    if code == 416 && have > 0 {
+    if stream.code == 416 && have > 0 {
         let _ = fs::remove_file(&part);
         have = 0;
-        let fresh = open_stream(&spec.url, 0)?;
-        code = fresh.0;
-        total = fresh.1;
-        etag = fresh.2;
-        reader = fresh.3;
+        stream = open_stream(&spec.url, 0)?;
     }
+    // Struct until here, because the line above replaces one wholesale. Loose from here,
+    // because the rest of this function reads them one at a time.
+    let Stream { code, total, etag, body: mut reader } = stream;
     // A server that ignores Range answers 200 with the whole body, so the bytes on disk
     // are not a prefix of what is arriving.
     if have > 0 && code == 200 {
@@ -594,7 +598,7 @@ pub fn fastest_mirror(
         let url = format!("{}{}", base, probe_path);
         let started = Instant::now();
         let measured = (|| -> Result<(), Error> {
-            let (code, _, _etag, mut reader) = open_stream(&url, 0)?;
+            let Stream { code, body: mut reader, .. } = open_stream(&url, 0)?;
             if code != 200 && code != 206 {
                 return Err(Error::Status { code, likely_expired: false });
             }
@@ -613,7 +617,7 @@ pub fn fastest_mirror(
         match measured {
             Ok(()) => {
                 let elapsed = started.elapsed();
-                if best.map_or(true, |(b, _)| elapsed < b) {
+                if best.is_none_or(|(b, _)| elapsed < b) {
                     best = Some((elapsed, base));
                 }
             }

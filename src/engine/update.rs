@@ -330,10 +330,8 @@ mod tests {
         let mut order = Vec::new();
         apply(&p, &Cancel::new(), &mut |e| match e {
             Event::Deleting { rel, .. } => order.push(format!("del {rel}")),
-            Event::Fetching { rel, .. } => {
-                if !order.contains(&format!("get {rel}")) {
-                    order.push(format!("get {rel}"))
-                }
+            Event::Fetching { rel, .. } if !order.contains(&format!("get {rel}")) => {
+                order.push(format!("get {rel}"))
             }
             _ => {}
         })

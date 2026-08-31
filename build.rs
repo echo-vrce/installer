@@ -80,7 +80,7 @@ fn entry(out: &mut Vec<u8>, type_id: u16, name_id: u16, memory_flags: u16, data:
 }
 
 fn pad4(out: &mut Vec<u8>) {
-    while out.len() % 4 != 0 {
+    while !out.len().is_multiple_of(4) {
         out.push(0);
     }
 }
@@ -94,7 +94,7 @@ fn icon_dib(side: u32) -> Vec<u8> {
     let alpha = coverage(side, if side <= 32 { &SMALL } else { &DISPLAY });
     let (r, g, b) = ICON_RGB;
 
-    let mask_stride = (((side + 31) / 32) * 4) as usize;
+    let mask_stride = (side.div_ceil(32) * 4) as usize;
     let mut out = Vec::with_capacity(40 + (side * side * 4) as usize + mask_stride * side as usize);
 
     out.extend_from_slice(&40u32.to_le_bytes()); // biSize
@@ -121,7 +121,7 @@ fn icon_dib(side: u32) -> Vec<u8> {
 
     // The AND mask is legacy, and ignored where the alpha channel is honoured. All zero
     // means "opaque everywhere", which is the correct fallback for a 32-bit icon.
-    out.extend(std::iter::repeat(0u8).take(mask_stride * side as usize));
+    out.extend(std::iter::repeat_n(0u8, mask_stride * side as usize));
     out
 }
 

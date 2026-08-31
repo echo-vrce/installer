@@ -82,7 +82,7 @@ itself up on first build.
 
 ```sh
 cargo build --release        # for the machine you are on
-cargo test                   # 293 tests, none of which needs a display or a headset
+cargo test                   # 299 tests, none of which needs a display or a headset
 ```
 
 Cross-compiling to Windows from Linux, which is how it is developed:

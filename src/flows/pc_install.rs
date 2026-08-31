@@ -23,8 +23,6 @@ use crate::theme;
 use crate::widgets::{self, RowState, Status};
 
 const STEPS: &[&str] = &["Licence", "Install path", "Install", "Done"];
-/// Measured, not guessed: `content-length` on the client archive. Shown so the disk
-/// requirement is on screen before anyone commits to a download this size.
 
 /// The stage names the engine emits, in order, so the checklist can be drawn before any of
 /// them have happened.
@@ -590,20 +588,17 @@ impl PcInstall {
             Status::Info,
             &format!("about {} to download", human_bytes(endpoints::PC_ARCHIVE_BYTES)),
         );
-        match self.inspection.free_bytes {
-            Some(free) => {
-                let plenty = free > endpoints::PC_ARCHIVE_BYTES * 2;
-                widgets::status(
-                    ui,
-                    if plenty { Status::Ok } else { Status::Warn },
-                    &format!(
-                        "{} free on this drive{}",
-                        human_bytes(free),
-                        if plenty { "" } else { ", which may not be enough" }
-                    ),
-                );
-            }
-            None => {}
+        if let Some(free) = self.inspection.free_bytes {
+            let plenty = free > endpoints::PC_ARCHIVE_BYTES * 2;
+            widgets::status(
+                ui,
+                if plenty { Status::Ok } else { Status::Warn },
+                &format!(
+                    "{} free on this drive{}",
+                    human_bytes(free),
+                    if plenty { "" } else { ", which may not be enough" }
+                ),
+            );
         }
         // The folder, not the game in it: that is what gets deleted, so that is what the
         // glance before committing should be about. "Overwritten" was also the wrong word

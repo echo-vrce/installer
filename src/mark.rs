@@ -65,7 +65,7 @@ pub fn coverage(side: u32, g: &Geom) -> Vec<u8> {
     let centre = n * 0.5;
     let radius = centre * PAD;
     let step = 1.0 / SS as f32;
-    let total = (SS * SS) as u32;
+    let total = SS * SS;
 
     let mut out = vec![0u8; (side * side) as usize];
     for y in 0..side {

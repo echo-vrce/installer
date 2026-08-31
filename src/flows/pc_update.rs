@@ -701,12 +701,15 @@ mod tests {
     fn going_back_forgets_the_previous_run() {
         // The bug this exists for: update one folder, step back, point at another, and the
         // finished screen still showed the first run's result against the second folder.
-        let mut f = PcUpdate::default();
-        f.phase = Phase::Succeeded;
-        f.summary = Some(Summary::default());
-        f.finished.push("a.dll".into());
-        f.error = Some("stale".into());
-        f.needs_elevation = true;
+        let mut f = PcUpdate {
+            phase: Phase::Succeeded,
+            summary: Some(Summary::default()),
+            finished: vec!["a.dll".into()],
+            error: Some("stale".into()),
+            needs_elevation: true,
+            ..Default::default()
+        };
+        // A ring, not a Vec, so it fills the only way it can.
         f.log.push("from the old run".into());
 
         f.reset_after(0);
@@ -736,8 +739,7 @@ mod tests {
 
     #[test]
     fn blocks_continue_on_an_empty_path_but_not_on_a_wrong_one() {
-        let mut f = PcUpdate::default();
-        f.path = "   ".into();
+        let mut f = PcUpdate { path: "   ".into(), ..Default::default() };
         assert!(f.blocked_reason(0).is_some());
         // A path that does not exist is reported, not forbidden: the user owns the path.
         f.path = "/definitely/not/here".into();

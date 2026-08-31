@@ -12,6 +12,8 @@ use egui::{Align, Layout, RichText, Ui};
 
 use crate::config::{self, Settings};
 use crate::engine::adb::{self, Adb};
+use crate::engine::netcheck;
+use crate::engine::Cancel;
 use crate::engine::quest::Quest;
 use crate::engine::tools::{self, Bundle, CacheReport};
 use crate::engine::watch::DeviceWatcher;
@@ -39,6 +41,15 @@ pub struct Tools {
     clear_error: Option<String>,
 
     installer: crate::update_notice::Installer,
+
+    net: Option<Receiver<NetMsg>>,
+    net_results: Vec<(String, netcheck::Outcome)>,
+    net_done: bool,
+}
+
+enum NetMsg {
+    One(String, netcheck::Outcome),
+    Done,
 }
 
 impl Default for Tools {
@@ -58,6 +69,9 @@ impl Default for Tools {
             cleared: None,
             clear_error: None,
             installer: Default::default(),
+            net: None,
+            net_results: Vec::new(),
+            net_done: false,
         };
         tools.cache = tools.report();
         tools
@@ -172,7 +186,94 @@ impl Tools {
         section_own_log(ui);
         ui.add_space(theme::UNIT * 2.0);
         self.section_cache(ui);
-        busy || updating
+        ui.add_space(theme::UNIT * 2.0);
+        let checking = self.section_network(ui);
+        busy || updating || checking
+    }
+
+    /// The network check.
+    ///
+    /// Not run on its own initiative: it makes a request to every host the app uses, which
+    /// is not something to do behind somebody's back, and it is only ever wanted by
+    /// somebody who already knows something is wrong.
+    fn section_network(&mut self, ui: &mut Ui) -> bool {
+        widgets::section_label(ui, "NETWORK");
+        ui.label(
+            RichText::new(
+                "Tries every host the installer needs, in the order the machine tries them: \
+                 the name, then the connection, then the request. The first stage that fails \
+                 is the one to fix.",
+            )
+            .font(theme::font_ui(11.5))
+            .color(theme::TEXT_DIM),
+        );
+
+        // Named before the results, because a proxy nobody set explains every red line
+        // below it and is the first thing to rule out.
+        if let Some(p) = netcheck::proxy_in_use() {
+            ui.add_space(theme::UNIT * 0.5);
+            widgets::status(ui, Status::Warn, "a proxy is set for this account");
+            widgets::mono_color(ui, &p, 10.5, theme::TEXT_DIM);
+        }
+
+        let running = self.pump_network();
+        if !self.net_results.is_empty() {
+            ui.add_space(theme::UNIT * 0.75);
+            for (what, outcome) in &self.net_results {
+                widgets::status(
+                    ui,
+                    if outcome.is_fine() { Status::Ok } else { Status::Err },
+                    what.as_str(),
+                );
+                widgets::mono_color(ui, &outcome.to_string(), 10.5, theme::TEXT_DIM);
+            }
+        }
+
+        ui.add_space(theme::UNIT * 0.75);
+        if running {
+            widgets::status(ui, Status::Info, "Checking...");
+        } else if widgets::secondary(
+            ui,
+            if self.net_done { "Check again" } else { "Check the connection" },
+            true,
+        ) {
+            self.start_network();
+        }
+        running
+    }
+
+    fn start_network(&mut self) {
+        if self.net.is_some() {
+            return;
+        }
+        self.net_results.clear();
+        self.net_done = false;
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let cancel = Cancel::new();
+            netcheck::run(&cancel, &mut |t, outcome| {
+                let _ = tx.send(NetMsg::One(t.what.to_string(), outcome));
+            });
+            let _ = tx.send(NetMsg::Done);
+        });
+        self.net = Some(rx);
+    }
+
+    fn pump_network(&mut self) -> bool {
+        let Some(rx) = &self.net else { return false };
+        let mut finished = false;
+        for msg in rx.try_iter() {
+            match msg {
+                NetMsg::One(what, outcome) => self.net_results.push((what, outcome)),
+                NetMsg::Done => finished = true,
+            }
+        }
+        if finished {
+            self.net = None;
+            self.net_done = true;
+            return false;
+        }
+        true
     }
 
     /// The update section.

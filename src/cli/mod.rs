@@ -73,7 +73,7 @@ pub fn catch_interrupt() {
         extern "C" fn on_signal(_: libc::c_int) {
             // The only thing that is safe to do in a signal handler. Everything the user
             // sees is printed later, by the thread that notices.
-            INTERRUPT.get().map(|c| c.cancel());
+            if let Some(c) = INTERRUPT.get() { c.cancel() }
         }
         libc::signal(libc::SIGINT, on_signal as *const () as libc::sighandler_t);
         libc::signal(libc::SIGTERM, on_signal as *const () as libc::sighandler_t);
@@ -145,6 +145,7 @@ pub fn restore_sigpipe() {
     }
 }
 
+#[derive(Default)]
 struct Args {
     /// Subcommand, then any subcommand of that. Never a modifier: those are all flags.
     command: Vec<String>,
@@ -165,28 +166,6 @@ struct Args {
     error: Option<String>,
 }
 
-impl Default for Args {
-    fn default() -> Self {
-        Args {
-            command: Vec::new(),
-            path: None,
-            out: None,
-            serial: None,
-            quiet: false,
-            no_color: false,
-            yes: false,
-            keep_archive: false,
-            clear: false,
-            log: None,
-            from: None,
-            json: false,
-            events: false,
-            help: false,
-            version: false,
-            error: None,
-        }
-    }
-}
 
 /// Ordinary getopt conventions, hand-rolled rather than pulling in a crate for it.
 ///
@@ -367,6 +346,7 @@ pub fn run(argv: &[String]) -> i32 {
         ("quest", sub) => sub_help(st, "quest", sub, &["status", "update", "install", "launch"]),
         ("patch", _) => patch(st, args.path.as_deref(), args.from.as_deref(), args.yes),
         ("deps", _) => deps(st),
+        ("network", _) => network(st),
         ("self-update", Some("check")) => self_update_check(st),
         ("self-update", Some("apply")) => self_update_apply(st, args.yes),
         ("self-update", sub) => sub_help(st, "self-update", sub, &["check", "apply"]),
@@ -615,6 +595,24 @@ const COMMANDS: &[Command] = &[
         opts: &[],
         examples: &[("echo-vrce-cli deps", "what is set up?")],
         exits: &[],
+    },
+    Command {
+        name: "network",
+        usage: "network",
+        summary: "try every host the installer needs and say which stage fails",
+        detail: &[
+            "\"Could not reach the server\" is the same sentence for a DNS block, a",
+            "firewall, a dead proxy and a mirror that is genuinely down, and those have",
+            "four different answers. This tries each host in the order the machine does:",
+            "the name, then the connection to port 443, then the request. The first stage",
+            "that fails is the finding.",
+            "",
+            "Changes nothing, and a proxy set in the environment is named first, because",
+            "one nobody meant to set explains every other line at once.",
+        ],
+        opts: &[],
+        examples: &[("echo-vrce-cli network", "why can nothing be downloaded?")],
+        exits: &[(code::FAILED, "at least one host could not be reached")],
     },
     Command {
         name: "self-update check",
@@ -1285,7 +1283,7 @@ fn pc_update(st: Style, path: Option<&str>) -> i32 {
         Ok(m) => m,
         Err(c) => return c,
     };
-    let plan = match update::plan(&manifest, &target, &cancel) {
+    let plan = match update::plan(&manifest, &target, cancel) {
         Ok(p) => p,
         Err(e) => {
             st.err(&format!("could not work out what to do: {e}"));
@@ -1746,6 +1744,35 @@ fn sub_help(st: Style, group: &str, sub: Option<&str>, valid: &[&str]) -> i32 {
     }
     st.info(&format!("expected: {}", valid.join(", ")));
     fail(st, code::USAGE, &format!("{group} needs one of: {}", valid.join(", ")))
+}
+
+fn network(st: Style) -> i32 {
+    use crate::engine::netcheck;
+    st.heading("NETWORK");
+    if let Some(p) = netcheck::proxy_in_use() {
+        st.warn("a proxy is set for this account");
+        st.field("proxy", &p);
+    }
+
+    let mut rows = Vec::new();
+    netcheck::run(interrupted(), &mut |t, outcome| {
+        if outcome.is_fine() {
+            st.ok(&format!("{}: {outcome}", t.what));
+        } else {
+            st.err(&format!("{}: {outcome}", t.what));
+        }
+        rows.push(json!({"what": t.what, "url": t.url, "ok": outcome.is_fine(),
+                         "detail": outcome.to_string()}));
+    });
+
+    let bad = rows.iter().filter(|r| r["ok"] == false).count();
+    if bad == 0 {
+        st.ok("every host answered");
+        return st.emit(code::OK, json!({"ok": true, "hosts": rows}));
+    }
+    // Non-zero on purpose: this is the command somebody puts in a script when they are
+    // trying to work out whether the network is why the last run failed.
+    st.emit(code::FAILED, json!({"ok": false, "unreachable": bad, "hosts": rows}))
 }
 
 fn self_update_check(st: Style) -> i32 {
@@ -2531,7 +2558,7 @@ mod tests {
         // pages of their own because they are one line each, explained in the entry for the
         // command they undo. A page each would be filler.
         let dispatchable = [
-            "status", "update", "install", "patch", "deps",
+            "status", "update", "install", "patch", "deps", "network",
             "self-update check", "self-update apply",
             "quest status", "quest update", "quest install", "quest launch",
             "adb install", "adb use", "adb forget",
@@ -2627,6 +2654,7 @@ mod tests {
             ("Dependencies: choose Revive", "revive use"),
             ("Dependencies: what is set up", "deps"),
             ("Update this installer", "self-update check"),
+            ("Why nothing downloads", "network"),
             ("Tools: collect logs", "logs"),
             ("Tools: cached downloads", "cache"),
         ] {
