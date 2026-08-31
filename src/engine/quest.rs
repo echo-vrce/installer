@@ -6,7 +6,8 @@
 //! **The install marker is an interop format, not ours.** Three independent installers now
 //! write `.echo_installer_version` at the manifest target root with the same keys. If this
 //! one deviates, its update flow refuses installs made by the other two and theirs refuse
-//! ours. The shape below is fixed; see `docs/findings.md`.
+//! ours. The shape below is fixed; DOCS.md has it under "The install marker, which is an
+//! interop standard".
 //!
 //! **Every device command carries `-s <serial>` when a serial is known.** The original
 //! never does, so the moment a second Android device is attached, adb refuses everything

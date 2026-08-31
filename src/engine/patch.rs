@@ -7,7 +7,8 @@
 //! path are registered against the client ID in Discord's developer portal.
 //!
 //! Three things here that the original does not do, each learned by probing the live
-//! service (see `docs/findings.md`):
+//! service. What the service answers is written down in DOCS.md, under "The Discord licence
+//! patch":
 //!
 //! - **The listener does not take the first connection it gets.** Browsers speculatively
 //!   open sockets; Chrome preconnects the moment the address bar resolves, and that socket

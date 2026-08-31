@@ -2,8 +2,8 @@
 //! Every URL the app talks to, in one place.
 //!
 //! Recorded here rather than inline so that a change of hosting is a change to one file,
-//! and so the set is auditable at a glance. See `docs/findings.md` for what was measured
-//! about each of these.
+//! and so the set is auditable at a glance. What was measured about each of these is in
+//! DOCS.md, under "What the live service actually does".
 
 /// Manifest driving incremental PC updates. Entry paths resolve against its parent.
 pub const PC_MANIFEST: &str = "https://files.echovr.de/updates/update.manifest";

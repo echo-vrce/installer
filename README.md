@@ -118,8 +118,9 @@ original Echo VR Installer, and the server and the Discord bot that this build s
 depends on. That infrastructure is the reason any of this works, and standing up a
 replacement would be a far larger job than writing an installer.
 
-**[The Echo VR Lounge](https://discord.com/invite/echo-vr-lounge)** and the wider EchoVRCE
-community keep the game alive, run the servers, and answer the questions.
+**The EchoVRCE community**, whose home is the
+**[Echo VR Lounge](https://discord.com/invite/echo-vr-lounge)**, keeps the game alive and
+runs the servers.
 
 **Echo VR is copyright Meta / Ready At Dawn.** This installer is not associated with,
 endorsed by, or supported by either of them. It installs a community build of a game whose

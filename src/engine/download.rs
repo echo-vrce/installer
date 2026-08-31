@@ -12,7 +12,8 @@
 //! - 1 MiB buffers rather than 1 KiB. The Java's buffer costs roughly five million read
 //!   calls on that archive, and it repainted the UI on every one of them.
 //! - A 404 from a signed Discord CDN link is reported as a likely expiry, because that is
-//!   what it almost always is. See `docs/findings.md`.
+//!   what it almost always is: the link is signed and good for exactly 24 hours. DOCS.md,
+//!   under "The Discord licence patch", has the timestamps it was read off.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
