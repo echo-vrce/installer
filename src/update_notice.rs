@@ -309,3 +309,34 @@ impl Installer {
         true
     }
 }
+
+#[cfg(test)]
+mod installer_tests {
+    use super::*;
+
+    #[test]
+    fn a_finished_result_stays_readable() {
+        // It used to be taken by the screen that drew it, so the success message lived for
+        // exactly one frame: visible only if that frame happened to be the last one drawn,
+        // and gone the moment anything repainted, leaving a screen offering to install an
+        // update it had just installed.
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(Msg::Done(Ok(()))).unwrap();
+        let mut inst = Installer { running: Some(rx), ..Default::default() };
+
+        assert!(!inst.pump(), "a delivered result means the work is over");
+        assert!(matches!(inst.finished, Some(Ok(()))));
+        for _ in 0..5 {
+            inst.pump();
+            assert!(matches!(inst.finished, Some(Ok(()))), "the result did not survive a repaint");
+        }
+    }
+
+    #[test]
+    fn starting_again_clears_the_previous_result() {
+        let mut inst = Installer { finished: Some(Err("boom".into())), ..Default::default() };
+        inst.start();
+        assert!(inst.finished.is_none(), "the last failure was still on screen");
+        inst.cancel();
+    }
+}

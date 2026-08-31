@@ -90,19 +90,31 @@ pub enum Status {
 /// the line that saves someone discovering a wrong path 8 GB into a download.
 pub fn status(ui: &mut Ui, kind: Status, text: &str) {
     ui.horizontal(|ui| {
-        let size = 13.0;
-        let (rect, _) = ui.allocate_exact_size(vec2(size, size + 2.0), Sense::hover());
-        let icon_rect = Rect::from_center_size(rect.center(), vec2(size, size));
-        let painter = ui.painter().clone();
-        match kind {
-            Status::Ok => icons::check(&painter, icon_rect, theme::SUCCESS),
-            Status::Info => icons::info(&painter, icon_rect, theme::ACCENT_TEXT),
-            Status::Warn => icons::warning(&painter, icon_rect, theme::WARNING),
-            Status::Err => icons::cross(&painter, icon_rect, theme::ERROR),
-        }
-        ui.add_space(6.0);
-        breaking_label(ui, text, theme::font_ui(12.0), theme::TEXT_MUTED);
+        status_inline(ui, kind, text);
     });
+}
+
+/// The icon and its line, drawn into the row already in progress.
+///
+/// Container-free on purpose, and that is the whole point of it existing. A nested
+/// `ui.horizontal` inside a vertically centred row claims the full available height rather
+/// than its own, so a bar sized from it overflows its panel and egui clips the frame: the
+/// bar renders *shorter* than the size it asked for, by an amount that depends on what is
+/// inside it. Returns the union of what was drawn, for a caller making the line clickable.
+pub fn status_inline(ui: &mut Ui, kind: Status, text: &str) -> Rect {
+    let size = 13.0;
+    let (rect, _) = ui.allocate_exact_size(vec2(size, size + 2.0), Sense::hover());
+    let icon_rect = Rect::from_center_size(rect.center(), vec2(size, size));
+    let painter = ui.painter().clone();
+    match kind {
+        Status::Ok => icons::check(&painter, icon_rect, theme::SUCCESS),
+        Status::Info => icons::info(&painter, icon_rect, theme::ACCENT_TEXT),
+        Status::Warn => icons::warning(&painter, icon_rect, theme::WARNING),
+        Status::Err => icons::cross(&painter, icon_rect, theme::ERROR),
+    }
+    ui.add_space(6.0);
+    let label = breaking_label(ui, text, theme::font_ui(12.0), theme::TEXT_MUTED);
+    rect.union(label.rect)
 }
 
 /// The one accent-filled button on screen. There is never more than one.
@@ -374,7 +386,12 @@ fn open_url(url: &str) -> std::io::Result<()> {
 /// 2. Inside a token too long to fit, after a separator - `\`, `/`, `-`, `_`, `.` - so a
 ///    path breaks between its parts, which is where someone reading it would pause anyway.
 /// 3. Only when a single run of characters still will not fit, mid-token.
-pub fn breaking_label(ui: &mut Ui, text: &str, font: egui::FontId, colour: Color32) {
+pub fn breaking_label(
+    ui: &mut Ui,
+    text: &str,
+    font: egui::FontId,
+    colour: Color32,
+) -> egui::Response {
     // Inside a horizontal layout egui hands children an unbounded width - that is what
     // "extend" means - so `available_width` can come back as infinity. Wrapping to infinity
     // is not wrapping, so it falls back to the width of the enclosing panel.
@@ -390,7 +407,7 @@ pub fn breaking_label(ui: &mut Ui, text: &str, font: egui::FontId, colour: Color
     job.wrap.break_anywhere = false;
     // Set explicitly because a horizontal parent would otherwise override it back to
     // extending, which is the whole problem.
-    ui.add(egui::Label::new(job).wrap_mode(egui::TextWrapMode::Wrap));
+    ui.add(egui::Label::new(job).wrap_mode(egui::TextWrapMode::Wrap))
 }
 
 /// Where a path or a hash may break, in order of preference. A break lands *after* one of

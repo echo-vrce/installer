@@ -367,6 +367,9 @@ pub fn run(argv: &[String]) -> i32 {
         ("quest", sub) => sub_help(st, "quest", sub, &["status", "update", "install", "launch"]),
         ("patch", _) => patch(st, args.path.as_deref(), args.from.as_deref(), args.yes),
         ("deps", _) => deps(st),
+        ("self-update", Some("check")) => self_update_check(st),
+        ("self-update", Some("apply")) => self_update_apply(st, args.yes),
+        ("self-update", sub) => sub_help(st, "self-update", sub, &["check", "apply"]),
         ("adb", Some("install")) => adb_install(st, args.yes),
         ("adb", Some("use")) => adb_use(st, args.path.as_deref()),
         ("adb", Some("forget")) => adb_forget(st),
@@ -614,6 +617,36 @@ const COMMANDS: &[Command] = &[
         exits: &[],
     },
     Command {
+        name: "self-update check",
+        usage: "self-update check",
+        summary: "ask whether a newer installer has been published",
+        detail: &[
+            "One request for a file naming the newest published version. Nothing",
+            "identifying is sent and nothing is installed. The answer is remembered, so",
+            "`--version` can mention it afterwards without going to the network.",
+        ],
+        opts: &[],
+        examples: &[("echo-vrce-cli self-update check", "is there a newer one?")],
+        exits: &[(code::FAILED, "the version could not be fetched")],
+    },
+    Command {
+        name: "self-update apply",
+        usage: "self-update apply [--yes]",
+        summary: "download the newest installer and replace this one",
+        detail: &[
+            "Replaces both executables, because a window from one version driving a",
+            "command line from another is a protocol mismatch waiting to happen. The two",
+            "being replaced are renamed with .old beside the new ones, so going back is a",
+            "rename away; they are removed the next time the new build starts.",
+            "",
+            "Refuses when the folder cannot be written to, which is what happens under",
+            "C:\\Program Files: elevating would mean running the very file being replaced.",
+        ],
+        opts: &["-y, --yes"],
+        examples: &[("echo-vrce-cli self-update apply -y", "install it")],
+        exits: &[(code::FAILED, "the download failed, or this folder is read only")],
+    },
+    Command {
         name: "adb install",
         usage: "adb install [--yes]",
         summary: "download adb from Google and use that copy",
@@ -844,8 +877,11 @@ fn usage(st: Style) {
     );
 
     st.heading("COMMANDS");
+    // Wide enough for the longest name there is, worked out rather than guessed: a hard
+    // coded width silently breaks the column the first time somebody adds a longer command.
+    let w = COMMANDS.iter().map(|c| c.name.len()).max().unwrap_or(14);
     for c in COMMANDS {
-        println!("  {}  {}", st.accent(&format!("{:<14}", c.name)), c.summary);
+        println!("  {}  {}", st.accent(&format!("{:<w$}", c.name)), c.summary);
     }
     println!("\n  {}", st.dim("echo-vrce-cli <command> --help  for any of them"));
 
@@ -1712,6 +1748,90 @@ fn sub_help(st: Style, group: &str, sub: Option<&str>, valid: &[&str]) -> i32 {
     fail(st, code::USAGE, &format!("{group} needs one of: {}", valid.join(", ")))
 }
 
+fn self_update_check(st: Style) -> i32 {
+    use crate::engine::selfupdate;
+    let current = selfupdate::current();
+    st.heading("SELF UPDATE");
+    st.field("running", current);
+    match selfupdate::published(interrupted()) {
+        Ok(latest) => {
+            // Remembered whatever the answer is, so `--version` reports the same thing the
+            // window does without either of them having to ask again.
+            let mut settings = config::Settings::load();
+            settings.update_latest_seen = Some(latest.clone());
+            settings.update_checked_at = Some(crate::update_notice::now_secs());
+            settings.save();
+
+            let newer = selfupdate::is_newer(&latest, current);
+            if newer {
+                st.ok(&format!("{latest} is available. `self-update apply` installs it."));
+            } else {
+                st.ok(&format!("{current} is the newest published version"));
+            }
+            st.emit(
+                code::OK,
+                json!({"ok": true, "running": current, "latest": latest, "newer": newer}),
+            )
+        }
+        Err(e) => {
+            st.err(&e.to_string());
+            fail(st, code::FAILED, &e.to_string())
+        }
+    }
+}
+
+fn self_update_apply(st: Style, yes: bool) -> i32 {
+    use crate::engine::selfupdate;
+    st.heading("SELF UPDATE");
+    st.field("from", crate::endpoints::UPDATE_ZIP);
+    match selfupdate::install_dir() {
+        Ok(d) => st.field("into", &d.display().to_string()),
+        Err(e) => {
+            st.err(&e.to_string());
+            return fail(st, code::FAILED, &e.to_string());
+        }
+    }
+    if !selfupdate::can_replace_in_place() {
+        // Said before anything is downloaded rather than after: there is no point spending
+        // six megabytes to find out the folder was never writable.
+        let msg = "this folder cannot be written to, so the update cannot be applied here";
+        st.err(msg);
+        return fail(st, code::FAILED, msg);
+    }
+    if !yes
+        && !confirm(
+            st,
+            "This replaces both executables in that folder with the newest published \
+             build. The current two are kept beside them with .old on the name.",
+        )
+    {
+        st.info("nothing was done");
+        return st.emit(code::OK, json!({"ok": true, "changed": false, "declined": true}));
+    }
+
+    let mut stage = String::new();
+    let result = selfupdate::apply(interrupted(), &mut |e| match e {
+        selfupdate::Event::Stage(s) => {
+            st.progress_done();
+            stage = s.to_string();
+            st.info(s);
+        }
+        selfupdate::Event::Downloading(snap) => st.download(&snap),
+        selfupdate::Event::Extracting { done, total } => st.progress(done, total, None, None),
+    });
+    st.progress_done();
+    match result {
+        Ok(()) => {
+            st.ok("installed. Run it again to be on the new version.");
+            st.emit(code::OK, json!({"ok": true, "changed": true}))
+        }
+        Err(e) => {
+            st.err(&format!("{stage}: {e}"));
+            fail(st, code::FAILED, &e.to_string())
+        }
+    }
+}
+
 fn deps(st: Style) -> i32 {
     let settings = config::Settings::load();
 
@@ -2412,6 +2532,7 @@ mod tests {
         // command they undo. A page each would be filler.
         let dispatchable = [
             "status", "update", "install", "patch", "deps",
+            "self-update check", "self-update apply",
             "quest status", "quest update", "quest install", "quest launch",
             "adb install", "adb use", "adb forget",
             "revive install", "revive setup", "revive use", "revive forget",
@@ -2505,6 +2626,7 @@ mod tests {
             ("Dependencies: install Revive", "revive install"),
             ("Dependencies: choose Revive", "revive use"),
             ("Dependencies: what is set up", "deps"),
+            ("Update this installer", "self-update check"),
             ("Tools: collect logs", "logs"),
             ("Tools: cached downloads", "cache"),
         ] {

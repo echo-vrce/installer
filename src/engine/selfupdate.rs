@@ -25,6 +25,14 @@ pub enum Event {
 #[derive(Debug)]
 pub enum Error {
     Fetch(download::Error),
+    /// A failed version lookup, which needs different words from a failed download.
+    ///
+    /// The download errors are written for the 4.68 GB payload: they promise that whatever
+    /// arrived is kept and will carry on, and they suggest another mirror on a 404. Neither
+    /// is true of a one-line file with a single source, and telling somebody their partial
+    /// download is safe when there was no download is the kind of small lie that costs
+    /// trust in every other message the app prints.
+    Check(download::Error),
     Unzip(unzip::Error),
     /// The zip did not contain the two executables where they were expected.
     Incomplete(String),
@@ -37,6 +45,15 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::Fetch(e) => write!(f, "{e}"),
+            Error::Check(download::Error::Network(m)) => {
+                write!(f, "could not reach GitHub: {}", m.trim_start_matches("io: ").trim())
+            }
+            Error::Check(download::Error::Status { code: 404, .. }) => write!(
+                f,
+                "the latest release does not publish a version file, so there is nothing to \
+                 compare against"
+            ),
+            Error::Check(e) => write!(f, "{e}"),
             Error::Unzip(e) => write!(f, "{e}"),
             Error::Incomplete(what) => write!(f, "the download did not contain {what}"),
             Error::NotWritable(dir) => write!(
@@ -72,7 +89,8 @@ pub fn current() -> &'static str {
 
 /// Asks what the newest published version is.
 pub fn published(cancel: &Cancel) -> Result<String, Error> {
-    let text = download::fetch_text_cancellable(endpoints::UPDATE_VERSION, cancel, &mut |_, _| {})?;
+    let text = download::fetch_text_cancellable(endpoints::UPDATE_VERSION, cancel, &mut |_, _| {})
+        .map_err(Error::Check)?;
     Ok(clean_version(&text))
 }
 
@@ -261,6 +279,20 @@ mod tests {
         assert!(!is_newer("", "0.9.3"));
         assert!(!is_newer("not-a-version", "0.9.3"));
         assert!(!is_newer("<!doctype html>", "0.9.3"));
+    }
+
+    #[test]
+    fn a_failed_check_does_not_borrow_the_downloads_advice() {
+        // The download wording promises a resumable transfer and suggests another mirror.
+        // A version lookup has neither, and saying so anyway is a lie in the one message
+        // somebody reads when they are already suspicious that something is wrong.
+        let refused = Error::Check(download::Error::Network("io: Connection refused".into()));
+        let text = refused.to_string();
+        assert_eq!(text, "could not reach GitHub: Connection refused");
+        assert!(!text.contains("carry on"));
+
+        let missing = Error::Check(download::Error::Status { code: 404, likely_expired: false });
+        assert!(!missing.to_string().contains("mirror"), "{missing}");
     }
 
     #[test]

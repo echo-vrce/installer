@@ -10,10 +10,14 @@
 //! So there are two binaries sharing every line of code, and this one is twenty of them.
 //! Node and VS Code ship two executables on Windows for the same reason.
 
-use echo_vrce_installer::{cli, os};
+use echo_vrce_installer::{cli, engine::selfupdate, os};
 
 fn main() {
     os::quiet_hard_error_dialogs();
+    // Whichever of the two binaries starts first clears the previous version away, because
+    // somebody who only ever uses the command line should not be left with the leftovers of
+    // an update forever.
+    selfupdate::sweep_previous();
     cli::prepare_console();
     cli::catch_interrupt();
     cli::restore_sigpipe();

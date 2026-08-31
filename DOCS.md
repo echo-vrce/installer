@@ -56,7 +56,7 @@ itself up on the first build.
 ```sh
 cargo run                    # native build, for iterating on the UI
 cargo build --release
-cargo test                   # 278 tests, none needs a display, a VM or a headset
+cargo test                   # 293 tests, none needs a display, a VM or a headset
 cargo clippy --all-targets
 ```
 
@@ -147,6 +147,8 @@ and the elevated child process, and why the tests need no display.
 | `src/dependencies.rs` | The dependency panel: a settings screen, not a wizard |
 | `src/tools_screen.rs` | Support bundles and the download cache: likewise a settings screen |
 | `src/endpoints.rs` | Every URL the app talks to, in one place |
+| `src/update_notice.rs` | The startup update check, the one line it draws, and the installer job |
+| `src/engine/selfupdate.rs` | Finding out whether a newer installer exists, and replacing this one |
 | `src/config.rs` | Settings, and where app data lives |
 | `src/log.rs` | The log that outlives the window, and the ring the flows show |
 | `src/os.rs` | Process-wide OS behaviour that must be set before anything else runs |
@@ -555,6 +557,60 @@ Mirror selection never refuses to proceed. If none of them answers the speed tes
 tries the first, because a missing probe file says nothing about the payload. What it does
 is say so, and name what each server replied.
 
+### Updating the installer itself
+
+**On Windows a running executable cannot be deleted or written over, but it can be
+renamed**, and renaming does not disturb the image already mapped into memory. That single
+fact is what makes an in-place update possible with no second process, no helper, and no
+scheduled task: download beside the live copy, rename the live copy to `<name>.old`, move
+the new one into its place. The previous version is then sitting right there for anyone who
+needs to go back by hand, and `sweep_previous()` removes it at the next startup, which is
+the only proof that matters that the new build actually launches.
+
+Both executables are replaced, always. A window from one version driving a command line
+from another is a protocol mismatch waiting to happen, and the pair talks over a format
+that is free to change between releases.
+
+The check is **not** the GitHub API. The release publishes a `version.txt` asset, so a check
+is one plain GET of a URL that never changes: no JSON, no rate limit shared with everyone
+behind the same address, no API contract to be reshaped underneath us. The cost is one line
+of CI that has to keep writing that file, and an asset name with no version in it so the
+`releases/latest/download/` permalink resolves.
+
+`can_replace_in_place()` is checked before the button is offered rather than after the
+download. Under `C:\Program Files` it is false and there is no fix worth having, because
+the elevation broker runs `echo-vrce-cli.exe`, one of the two files being replaced.
+
+What the app reports is **staleness, not failure**. One dropped connection is noise and a
+message about it is worse than silence; a week with no successful check means a firewall or
+a DNS block, and that is worth saying, because otherwise no line at all means both "you are
+up to date" and "we have never managed to ask" and the user cannot tell which. Only a
+success moves the clock. The last version seen is remembered in settings so a restart
+inside the check interval still knows there is an update, and so `--version` can mention it
+without a request of its own, which a script calling it would not thank anyone for.
+
+A failed check does not borrow the download errors' wording. Those are written for the
+4.68 GB payload: they promise the partial transfer is kept and will carry on, and suggest
+another mirror on a 404. Neither is true of a one-line file with a single source.
+
+### A panel gets `exact_size` minus its margins, and no more
+
+`Panel::bottom(...).exact_size(46.0)` with a 16 px frame margin leaves the contents **14
+px**. Overflow that and egui clips the frame, so the bar renders *shorter* than the size it
+asked for, by an amount that depends on what is inside it. There is no warning and no
+visible error: the bar just changes height.
+
+That is how one bottom bar came out 44 px empty and 28 px with a single status line in it.
+The line was not the culprit either. A nested `ui.horizontal` inside a vertically centred
+row claims the whole available height rather than its own, so the row measured 30 px, not
+the 15 px of its tallest glyph. `widgets::status_inline` exists for exactly this: it draws
+into the row already in progress instead of opening one of its own.
+
+The same trap is why `Response::interact` on a container's response silently does nothing.
+The container was never registered as an interactive widget, so there is nothing for the
+click to land on; `ui.interact(rect, id, sense)` with the rect claimed explicitly is what
+makes a line clickable.
+
 ### Echo's logs on a Quest
 
 Written against a connected Quest 2 rather than transcribed from the Java, which turned out
@@ -608,7 +664,7 @@ last one is the reason the "Better Graphics" and texture mods are not implemente
 
 ## Testing
 
-**278 unit and integration tests**, none of which needs a display, a virtual machine or a
+**293 unit and integration tests**, none of which needs a display, a virtual machine or a
 headset. Downloads are tested against a local HTTP server (`engine/testserver.rs`) that can
 be told to drop connections mid-transfer, so resume and retry are exercised rather than
 assumed.

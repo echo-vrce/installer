@@ -217,22 +217,41 @@ impl Tools {
             return true;
         }
 
-        match self.installer.finished.take() {
+        // Read, never taken. Taking it meant the success message survived exactly one frame:
+        // it showed only when that frame happened to be the last one drawn, and vanished the
+        // moment anything caused a repaint, leaving a screen that offered to install an
+        // update it had already installed.
+        match &self.installer.finished {
             Some(Ok(())) => {
+                // Home has nothing left to offer: the new version is on disk and the only
+                // step remaining is a restart, which this screen is the one explaining.
+                update.newer = None;
                 widgets::status(ui, Status::Ok, "Update installed");
                 ui.label(
                     RichText::new(
-                        "Close this window and open it again to run the new version. The one \
-                         you were running is still beside it, with .old on the name, in case \
-                         you need to go back.",
+                        "The version you were running is still beside it, with .old on the \
+                         name, in case you need to go back. It is removed once the new one \
+                         has started successfully.",
                     )
                     .font(theme::font_ui(11.0))
                     .color(theme::TEXT_FAINT),
                 );
+                ui.add_space(theme::UNIT * 0.75);
+                // The new binary sits at the path this one was launched from, so starting it
+                // is an ordinary spawn. Offered rather than done automatically: relaunching
+                // somebody's window out from under them is not a decision to take for them.
+                if widgets::primary(ui, "Restart now", true) {
+                    match std::env::current_exe()
+                        .and_then(|exe| std::process::Command::new(exe).spawn())
+                    {
+                        Ok(_) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
+                        Err(e) => crate::log::line(&format!("restart failed: {e}")),
+                    }
+                }
                 return false;
             }
             Some(Err(e)) => {
-                widgets::status(ui, Status::Err, &e);
+                widgets::status(ui, Status::Err, e);
                 ui.add_space(theme::UNIT * 0.5);
             }
             None => {}
@@ -275,6 +294,14 @@ impl Tools {
                         ui,
                         Status::Ok,
                         &format!("{current} is the latest, checked today"),
+                    ),
+                    // A tick beside an answer this old, with a failure printed under it,
+                    // reads as "all well" when the honest reading is "this is the last thing
+                    // we managed to find out".
+                    Some(d) if d >= selfupdate::STALE_AFTER_DAYS => widgets::status(
+                        ui,
+                        Status::Warn,
+                        &format!("{current} was the latest {d} days ago"),
                     ),
                     Some(d) => widgets::status(
                         ui,

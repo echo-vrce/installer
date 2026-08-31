@@ -173,6 +173,13 @@ impl eframe::App for App {
         if self.update.pump(&mut self.settings) {
             self.settings.save();
         }
+        // The answer arrives on another thread, and egui only draws when something asks it
+        // to. Without this the result sits in memory unshown until the user happens to move
+        // the mouse, which on a machine nobody is touching is never. Costs two frames a
+        // second, and only while a check is actually in flight.
+        if self.update.is_checking() {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+        }
         match self.screen {
             Screen::Home => self.home(ui),
             Screen::Flow => self.flow_screen(ui),
@@ -187,8 +194,11 @@ impl eframe::App for App {
 impl App {
     fn home(&mut self, ui: &mut Ui) {
         egui::Panel::bottom("home_bar")
-            .exact_size(46.0)
-            .frame(panel_frame(theme::SURFACE, 16.0))
+            // 40, not the 46 it used to ask for: 40 is what every other bar in the app has
+            // actually been rendering, and a budget of 20 px holds the tallest thing that
+            // goes in here with room left over.
+            .exact_size(40.0)
+            .frame(bar_frame())
             .show(ui, |ui| {
                 let notice = self.update.notice(&self.settings);
                 let mut open_tools = false;
@@ -788,13 +798,12 @@ fn update_line(ui: &mut Ui, notice: &crate::update_notice::Notice, open_tools: &
         Notice::Stale(0) => (Status::Warn, "Updates have never been checked".to_string()),
         Notice::Stale(days) => (Status::Warn, format!("Last update check: {days} days ago")),
     };
-    let r = ui
-        .scope(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            widgets::status(ui, kind, &text);
-        })
-        .response
-        .interact(Sense::click());
+    // The row's own rect. `Response::interact` on a container's response looks like it
+    // should work and silently does not, because the container was never registered as an
+    // interactive widget, so the click lands on nothing. Claiming the rect explicitly is
+    // what makes the whole line, icon included, a target.
+    let rect = widgets::status_inline(ui, kind, &text);
+    let r = ui.interact(rect, ui.make_persistent_id("update_notice"), Sense::click());
     if r.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -805,6 +814,19 @@ fn update_line(ui: &mut Ui, notice: &crate::update_notice::Notice, open_tools: &
 
 fn panel_frame(fill: egui::Color32, margin: f32) -> egui::Frame {
     egui::Frame::new().fill(fill).inner_margin(egui::Margin::same(margin as i8))
+}
+
+/// A bottom bar's frame, with room to spare above and below its contents.
+///
+/// The vertical margin is smaller than the horizontal one on purpose. A panel gives its
+/// contents `exact_size` minus the margins and no more: overflow it and egui clips the
+/// frame, so the bar renders *shorter* than it asked for, and by an amount that depends on
+/// what is inside it. That is how the same bar came out 44 px with nothing in it and 28 px
+/// with one status line, whose 15 px icon did not fit in a 14 px budget.
+fn bar_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(theme::SURFACE)
+        .inner_margin(egui::Margin { left: 16, right: 16, top: 10, bottom: 10 })
 }
 
 /// Caps the content column and centres it, so a wide window grows the margins rather than
