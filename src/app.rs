@@ -194,10 +194,7 @@ impl eframe::App for App {
 impl App {
     fn home(&mut self, ui: &mut Ui) {
         egui::Panel::bottom("home_bar")
-            // 40, not the 46 it used to ask for: 40 is what every other bar in the app has
-            // actually been rendering, and a budget of 20 px holds the tallest thing that
-            // goes in here with room left over.
-            .exact_size(40.0)
+            .exact_size(theme::BAR_H_TEXT)
             .frame(bar_frame())
             .show(ui, |ui| {
                 let notice = self.update.notice(&self.settings);
@@ -360,8 +357,8 @@ impl App {
             });
 
         egui::Panel::bottom("nav")
-            .exact_size(52.0)
-            .frame(panel_frame(theme::SURFACE, 16.0))
+            .exact_size(theme::BAR_H)
+            .frame(bar_frame())
             .show(ui, |ui| {
                 let reason = flow.blocked_reason(step);
                 let last = step + 1 == flow.steps().len();
@@ -572,8 +569,8 @@ fn nav_bar(
 impl App {
     fn dependencies(&mut self, ui: &mut Ui) {
         egui::Panel::bottom("deps_bar")
-            .exact_size(52.0)
-            .frame(panel_frame(theme::SURFACE, 16.0))
+            .exact_size(theme::BAR_H)
+            .frame(bar_frame())
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -624,8 +621,8 @@ fn settings_header(ui: &mut Ui, title: &str) {
 impl App {
     fn tools(&mut self, ui: &mut Ui) {
         egui::Panel::bottom("tools_bar")
-            .exact_size(52.0)
-            .frame(panel_frame(theme::SURFACE, 16.0))
+            .exact_size(theme::BAR_H)
+            .frame(bar_frame())
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -660,8 +657,8 @@ impl App {
 impl App {
     fn about(&mut self, ui: &mut Ui) {
         egui::Panel::bottom("about_bar")
-            .exact_size(52.0)
-            .frame(panel_frame(theme::SURFACE, 16.0))
+            .exact_size(theme::BAR_H)
+            .frame(bar_frame())
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -796,7 +793,9 @@ fn update_line(ui: &mut Ui, notice: &crate::update_notice::Notice, open_tools: &
         // Staleness, not failure. One dropped connection is not worth a word; a week of
         // them means the absence of a line would otherwise be read as "up to date".
         Notice::Stale(0) => (Status::Warn, "Updates have never been checked".to_string()),
-        Notice::Stale(days) => (Status::Warn, format!("Last update check: {days} days ago")),
+        Notice::Stale(days) => {
+            (Status::Warn, format!("Last update check: {}", crate::fmt::days_ago(*days)))
+        }
     };
     // The row's own rect. `Response::interact` on a container's response looks like it
     // should work and silently does not, because the container was never registered as an
@@ -829,6 +828,13 @@ fn bar_frame() -> egui::Frame {
         .inner_margin(egui::Margin { left: 16, right: 16, top: 10, bottom: 10 })
 }
 
+/// The vertical room a bar leaves its contents, for the assertion that keeps the two
+/// numbers honest with each other.
+#[cfg(test)]
+fn bar_budget(exact_size: f32) -> f32 {
+    exact_size - 20.0
+}
+
 /// Caps the content column and centres it, so a wide window grows the margins rather than
 /// stretching a line of text across 900 px. Text stays left-aligned *inside* the column;
 /// it is the column that is centred, not the content.
@@ -846,4 +852,32 @@ fn capped<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         .inner
     })
     .inner
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_bar_leaves_room_for_what_goes_in_it() {
+        // A panel hands its contents `exact_size` minus the frame margins and clips the
+        // frame if they overflow, so the bar renders shorter than it asked for and by an
+        // amount that depends on what is inside it. Nothing warns, nothing logs, and it is
+        // not visible in a diff: four bars asked for 52 px and drew 40 for months. So the
+        // two numbers assert against each other here instead.
+        assert!(
+            bar_budget(theme::BAR_H) >= widgets::BUTTON_H,
+            "a {} px bar leaves {} px for a {} px button",
+            theme::BAR_H,
+            bar_budget(theme::BAR_H),
+            widgets::BUTTON_H
+        );
+        assert!(
+            bar_budget(theme::BAR_H_TEXT) >= widgets::STATUS_H,
+            "a {} px bar leaves {} px for a {} px status line",
+            theme::BAR_H_TEXT,
+            bar_budget(theme::BAR_H_TEXT),
+            widgets::STATUS_H
+        );
+    }
 }

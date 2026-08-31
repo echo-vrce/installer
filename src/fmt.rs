@@ -31,10 +31,58 @@ pub fn human_duration(d: std::time::Duration) -> String {
     }
 }
 
+/// How long ago something was, counted in days, in words a person would use.
+///
+/// Days all the way up was the first version and it does not survive contact with a check
+/// that has been failing for a while: "1 days ago" is wrong on the second day, and by the
+/// time it reads "912 days ago" the number has stopped carrying meaning. Which matters
+/// precisely because a large number here is the signal that something has been broken for a
+/// long time, so it is the moment the line most needs to be readable.
+pub fn days_ago(days: u64) -> String {
+    match days {
+        0 => "today".to_string(),
+        1 => "yesterday".to_string(),
+        // Up to a month, days are still the unit somebody thinks in.
+        2..=30 => format!("{days} days ago"),
+        31..=364 => {
+            let months = (days / 30).max(1);
+            if months == 1 {
+                "last month".to_string()
+            } else {
+                format!("{months} months ago")
+            }
+        }
+        _ => {
+            let years = days / 365;
+            if years == 1 {
+                "over a year ago".to_string()
+            } else {
+                format!("over {years} years ago")
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn says_how_long_ago_without_mangling_the_grammar() {
+        assert_eq!(days_ago(0), "today");
+        assert_eq!(days_ago(1), "yesterday", "\"1 days ago\" showed up on day two");
+        assert_eq!(days_ago(2), "2 days ago");
+        assert_eq!(days_ago(30), "30 days ago");
+        assert_eq!(days_ago(31), "last month");
+        assert_eq!(days_ago(90), "3 months ago");
+        assert_eq!(days_ago(364), "12 months ago");
+        assert_eq!(days_ago(365), "over a year ago");
+        assert_eq!(days_ago(900), "over 2 years ago");
+        // Centuries are not a real case, but a number that runs off the end of the line is
+        // not a good reason for the sentence to stop making sense.
+        assert_eq!(days_ago(40_000), "over 109 years ago");
+    }
 
     #[test]
     fn formats_sizes_the_way_people_read_them() {

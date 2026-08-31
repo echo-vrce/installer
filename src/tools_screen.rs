@@ -298,15 +298,10 @@ impl Tools {
                     // A tick beside an answer this old, with a failure printed under it,
                     // reads as "all well" when the honest reading is "this is the last thing
                     // we managed to find out".
-                    Some(d) if d >= selfupdate::STALE_AFTER_DAYS => widgets::status(
-                        ui,
-                        Status::Warn,
-                        &format!("{current} was the latest {d} days ago"),
-                    ),
                     Some(d) => widgets::status(
                         ui,
-                        Status::Ok,
-                        &format!("{current} was the latest {d} days ago"),
+                        if d >= selfupdate::STALE_AFTER_DAYS { Status::Warn } else { Status::Ok },
+                        &format!("{current} was the latest {}", crate::fmt::days_ago(d)),
                     ),
                     None => widgets::status(ui, Status::Warn, "never checked successfully"),
                 }

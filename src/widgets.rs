@@ -101,9 +101,14 @@ pub fn status(ui: &mut Ui, kind: Status, text: &str) {
 /// than its own, so a bar sized from it overflows its panel and egui clips the frame: the
 /// bar renders *shorter* than the size it asked for, by an amount that depends on what is
 /// inside it. Returns the union of what was drawn, for a caller making the line clickable.
+/// How tall a status line is, icon included.
+pub const STATUS_H: f32 = 15.0;
+/// How tall a button is. `primary` and `secondary` share it.
+pub const BUTTON_H: f32 = 30.0;
+
 pub fn status_inline(ui: &mut Ui, kind: Status, text: &str) -> Rect {
-    let size = 13.0;
-    let (rect, _) = ui.allocate_exact_size(vec2(size, size + 2.0), Sense::hover());
+    let size = STATUS_H - 2.0;
+    let (rect, _) = ui.allocate_exact_size(vec2(size, STATUS_H), Sense::hover());
     let icon_rect = Rect::from_center_size(rect.center(), vec2(size, size));
     let painter = ui.painter().clone();
     match kind {
@@ -127,7 +132,7 @@ pub fn primary(ui: &mut Ui, label: &str, enabled: bool) -> bool {
             1.0,
             if enabled { theme::ACCENT } else { theme::BORDER },
         ))
-        .min_size(vec2(104.0, 30.0));
+        .min_size(vec2(104.0, BUTTON_H));
     ui.add_enabled(enabled, btn).clicked()
 }
 

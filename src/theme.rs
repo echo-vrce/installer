@@ -48,6 +48,17 @@ pub const ON_ACCENT: Color32 = Color32::WHITE;
 /// The one spacing unit. Every gap in the app is a multiple of it; that consistency
 /// is most of what separates "minimal" from "empty".
 pub const UNIT: f32 = 8.0;
+/// Bottom bar heights.
+///
+/// A panel hands its contents `exact_size` minus its frame margins and nothing more, and
+/// clips the frame if they overflow, so the bar then renders *shorter* than it asked for by
+/// an amount that depends on what is inside it. These two numbers and `bar_frame`'s 10 px
+/// vertical margin belong together: 32 px of room for a 30 px button, 26 for a status line.
+/// Four bars asked for 52 and drew 40 for months because nobody had checked.
+pub const BAR_H: f32 = 52.0;
+/// For a bar that holds only a line of text.
+pub const BAR_H_TEXT: f32 = 46.0;
+
 pub const SIDEBAR_W: f32 = 196.0;
 /// Content is left-aligned and capped, so a wide window grows the margin rather than
 /// stretching lines to an unreadable length.

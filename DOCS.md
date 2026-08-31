@@ -600,11 +600,18 @@ px**. Overflow that and egui clips the frame, so the bar renders *shorter* than 
 asked for, by an amount that depends on what is inside it. There is no warning and no
 visible error: the bar just changes height.
 
-That is how one bottom bar came out 44 px empty and 28 px with a single status line in it.
-The line was not the culprit either. A nested `ui.horizontal` inside a vertically centred
+That is how one bottom bar came out 44 px empty and 28 px with a single status line in it,
+and how four others asked for 52 px and drew 40 for months without anyone noticing. The
+status line was not the culprit either. A nested `ui.horizontal` inside a vertically centred
 row claims the whole available height rather than its own, so the row measured 30 px, not
 the 15 px of its tallest glyph. `widgets::status_inline` exists for exactly this: it draws
 into the row already in progress instead of opening one of its own.
+
+All five bars now render the size they declare: `theme::BAR_H` for the ones holding a
+button, `BAR_H_TEXT` for the one holding only a line of text, both against `bar_frame`'s
+10 px vertical margin. Those numbers are only correct in relation to `widgets::BUTTON_H` and
+`STATUS_H`, so a test asserts them against each other. Nothing else catches this: it does
+not warn, it does not log, and it is invisible in a diff.
 
 The same trap is why `Response::interact` on a container's response silently does nothing.
 The container was never registered as an interactive widget, so there is nothing for the
